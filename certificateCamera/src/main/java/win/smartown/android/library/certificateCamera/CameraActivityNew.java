@@ -86,8 +86,9 @@ public class CameraActivityNew extends Activity implements View.OnClickListener 
             }
             tv_tip.setText(tip);
             if (result.isSucess==0){
-                //uploadImage(result.bitmap);
+                uploadImage(result.bitmap);
               //  closeDetect();
+                //threadPoolExecutor.shutdownNow();
             }
 
         }
@@ -180,7 +181,7 @@ public class CameraActivityNew extends Activity implements View.OnClickListener 
                         if(!new File(dir).exists()){
                             new File(dir).mkdir();
                         }
-                        final File file = new File(dir + "photo" + ".jpg");
+                        final File file = new File(dir + "photo" +System.currentTimeMillis()+ ".jpg");
                         file.createNewFile();
                         Log.e("xiong",file.getAbsolutePath());
                         FileOutputStream out = new FileOutputStream(file);
