@@ -80,8 +80,8 @@ public class CameraPreview extends SurfaceView implements SurfaceHolder.Callback
                     parameters.setPreviewSize(bestSize.width, bestSize.height);
                     parameters.setPictureSize(bestSize.width, bestSize.height);
                 } else {
-                    parameters.setPreviewSize(1920, 1080);
-                    parameters.setPictureSize(1920, 1080);
+                    parameters.setPreviewSize(800, 400);
+                    parameters.setPictureSize(800, 400);
                 }
                 camera.setParameters(parameters);
               //  camera.startPreview();
@@ -129,6 +129,7 @@ public class CameraPreview extends SurfaceView implements SurfaceHolder.Callback
     private Camera.Size getBestSize(List<Camera.Size> sizes) {
         Camera.Size bestSize = null;
         for (Camera.Size size : sizes) {
+            Log.e("xiong","w:"+size.width+"H:"+size.height);
             if ((float) size.width / (float) size.height == 16.0f / 9.0f) {
                 if (bestSize == null) {
                     bestSize = size;
@@ -149,6 +150,7 @@ public class CameraPreview extends SurfaceView implements SurfaceHolder.Callback
         if (camera != null) {
             camera.stopPreview();
             camera.setPreviewCallback(null);
+            camera.setPreviewCallbackWithBuffer(null);
             camera.release();
             camera = null;
         }
@@ -203,8 +205,13 @@ public class CameraPreview extends SurfaceView implements SurfaceHolder.Callback
 
     public static interface onFrame{
         void onBitmap(Bitmap bitmap);
+
     }
     onFrame onFrame ;
+
+
+    long lastTime=0;
+    long currentTime=0;
 
     public void setOnFrameListener(onFrame listener){
         onFrame = listener;
@@ -214,8 +221,21 @@ public class CameraPreview extends SurfaceView implements SurfaceHolder.Callback
         @Override
         public void onPreviewFrame(final byte[] data, Camera camera) {
 
+            currentTime =  System.currentTimeMillis();
             // 在使用完 Buffer 之后记得回收复用。
+         /*   if (null == data) {
+                camera.addCallbackBuffer(new byte[getBufferSize()]);
+            } else {
+                camera.addCallbackBuffer(data);
+            }
+*/
             camera.addCallbackBuffer(data);
+            if(currentTime-lastTime<300){
+                return;
+            }
+            lastTime = currentTime;
+
+
             Camera.Size size = camera.getParameters().getPreviewSize();
             try{
                 final YuvImage image = new YuvImage(data, ImageFormat.NV21, size.width, size.height, null);
@@ -223,12 +243,14 @@ public class CameraPreview extends SurfaceView implements SurfaceHolder.Callback
                     ByteArrayOutputStream stream = new ByteArrayOutputStream();
                     image.compressToJpeg(new Rect(0, 0, size.width, size.height), 80, stream);
                     final Bitmap bmp = BitmapFactory.decodeByteArray(stream.toByteArray(), 0, stream.size());
-
                     if(onFrame!=null){
                         onFrame.onBitmap(bmp);
                     }
-
                     stream.close();
+
+                  //  bmp.recycle();
+                    System.gc();
+
                 }
             }catch(Exception ex){
                 Log.e("Sys","Error:"+ex.getMessage());
@@ -236,12 +258,24 @@ public class CameraPreview extends SurfaceView implements SurfaceHolder.Callback
         }
     }
 
+
+
      PreviewCallback previewCallback = new  PreviewCallback();
 
+
+    private int  getBufferSize(){
+       int height=  camera.getParameters().getPreviewSize().height;
+       int width = camera.getParameters().getPreviewSize().width;
+       return 3110400;
+    }
     public void startPreview(Camera.PreviewCallback cb) {
         if (camera != null) {
 
+           // byte[] buffer = new byte[getBufferSize()];
             camera.setPreviewCallback(cb);
+      /*      camera.setPreviewCallbackWithBuffer(cb);
+            camera.addCallbackBuffer(buffer);*/
+
             camera.startPreview();
 
             Log.d("xiong", "startPreview() called");

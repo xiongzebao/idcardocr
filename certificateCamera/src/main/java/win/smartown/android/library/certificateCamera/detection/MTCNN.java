@@ -92,7 +92,7 @@ public class MTCNN {
     public MTCNN() {}
 
     public  ScanResult detect( ScanResult result) {
-       // Log.e("xiong","detect");
+        Log.e("xiong","detect");
         Bitmap bitmap = result.bitmap;
         // Log this method so that it can be analyzed with systrace.
         Trace.beginSection("detect");
@@ -101,7 +101,7 @@ public class MTCNN {
         // on the provided parameters.
         int w = bitmap.getWidth(), h = bitmap.getHeight();
 
-        //Log.e("xiong","w:"+w+"h:"+h);
+        Log.e("xiong","w:"+w+"h:"+h);
         int intValues[] = new int[w * h];
         float floatValues[] = new float[w * h * 3];
 
@@ -120,6 +120,7 @@ public class MTCNN {
         // Copy the input data into TensorFlow.
         Trace.beginSection("feed");
         inferenceInterface.feed(inputName, floatValues, h, w, 3);
+
         Trace.endSection();
 
         // Run the inference call.
@@ -189,7 +190,7 @@ public class MTCNN {
                 };
 
                 // pictureStata 的状态判别
-                // 身份证照片的状态，模糊：-1，正常：0，偏上：1，偏下：2，偏左：3，偏右：4，偏小：5，偏大;6
+                // 身份证照片的状态，模糊：-1，正常：0，偏上：1，偏下：2，偏左：3，偏右：4，偏小：5，偏大:6
                 if (noise_x > w/2 && noise_y > h/2) {
                     pictureStata = 0;
                 } else if (noise_x > w/2 && noise_y > h/2) {
@@ -232,6 +233,7 @@ public class MTCNN {
         result.isSucess = isRight;
         result.status = pictureStata;
         Log.e("xiong","isSuccess:"+result.isSucess+"status:"+result.status);
+
 
        // System.gc();
         return result;

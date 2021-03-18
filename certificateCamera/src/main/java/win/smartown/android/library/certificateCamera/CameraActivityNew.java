@@ -1,15 +1,16 @@
 package win.smartown.android.library.certificateCamera;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.ImageFormat;
-import android.graphics.Rect;
-import android.graphics.YuvImage;
 import android.hardware.Camera;
 import android.os.Bundle;
+import android.os.Environment;
+import android.os.Handler;
 import android.os.Message;
 import android.util.Log;
 import android.view.View;
@@ -17,11 +18,12 @@ import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
+import android.widget.TextView;
 
+import org.json.JSONException;
 import org.tensorflow.Session;
 
 import java.io.BufferedOutputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -39,7 +41,7 @@ import win.smartown.android.library.certificateCamera.detection.ScanResult;
  * <br>
  * 拍照界面
  */
-public class CameraActivity extends Activity implements View.OnClickListener {
+public class CameraActivityNew extends Activity implements View.OnClickListener {
 
     /**
      * 拍摄类型-身份证正面
@@ -61,14 +63,40 @@ public class CameraActivity extends Activity implements View.OnClickListener {
     public final static int REQUEST_CODE = 0X13;
     public final static int RESULT_CODE = 0X14;
 
-    /**
-     * @param type {@link #TYPE_IDCARD_FRONT}
-     *             {@link #TYPE_IDCARD_BACK}
-     *             {@link #TYPE_COMPANY_PORTRAIT}
-     *             {@link #TYPE_COMPANY_LANDSCAPE}
-     */
+    @SuppressLint("HandlerLeak")
+    Handler handler = new Handler(){
+
+        @Override
+        public void handleMessage(Message msg) {
+            super.handleMessage(msg);
+            ScanResult result = (ScanResult) msg.obj;
+
+          //  模糊：-1，正常：0，偏上：1，偏下：2，偏左：3，偏右：4，偏小：5，偏大:6
+
+            String tip;
+            switch (result.status){
+                case -1:tip="正常"   ;break;
+                case 0:tip="偏上"; break;
+                case 1:tip="偏下";break;
+                case 2:tip="偏左";break;
+                case 3:tip="偏右";break;
+                case 4:tip="偏小";break;
+                case 5:tip="偏大";break;
+                default:tip="未知状态";break;
+            }
+            tv_tip.setText(tip);
+            if (result.isSucess==0){
+                //uploadImage(result.bitmap);
+              //  closeDetect();
+            }
+
+        }
+    };
+
+
+
     public static void openCertificateCamera(Activity activity, int type) {
-        Intent intent = new Intent(activity, CameraActivity.class);
+        Intent intent = new Intent(activity, CameraActivityNew.class);
         intent.putExtra("type", type);
         activity.startActivityForResult(intent, REQUEST_CODE);
     }
@@ -84,35 +112,24 @@ public class CameraActivity extends Activity implements View.OnClickListener {
     }
 
     private CameraPreview cameraPreview;
-    private View containerView;
     private ImageView cropView;
-    private ImageView flashImageView;
-    private View optionView;
-    private View resultView;
-
-    private int type;
+    private View containerInnerView;
+    private Bitmap temp;
+    private TextView tv_tip;
 
     private ExecutorService threadPoolExecutor  = Executors.newSingleThreadExecutor();
+    MTCNN mtcnn ;
+    int type;
 
-
-    ScanResult result = new ScanResult();
-
-  ImageView test;
- MTCNN mtcnn ;
-
+    boolean isUp=false;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         mtcnn = MTCNN.create(getAssets());
-        type = getIntent().getIntExtra("type", TYPE_IDCARD_FRONT);
-        if (type == TYPE_COMPANY_PORTRAIT) {
-            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
-        } else {
-            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
-        }
-        setContentView(R.layout.activity_camera);
-        test = findViewById(R.id.test);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        setContentView(R.layout.activity_camera_new);
         cameraPreview = (CameraPreview) findViewById(R.id.camera_surface);
+        tv_tip = findViewById(R.id.tv_tip);
         //获取屏幕最小边，设置为cameraPreview较窄的一边
         float screenMinSize = Math.min(getResources().getDisplayMetrics().widthPixels, getResources().getDisplayMetrics().heightPixels);
         //根据screenMinSize，计算出cameraPreview的较宽的一边，长宽比为标准的16:9
@@ -125,97 +142,100 @@ public class CameraActivity extends Activity implements View.OnClickListener {
         }
         layoutParams.addRule(RelativeLayout.CENTER_IN_PARENT);
         cameraPreview.setLayoutParams(layoutParams);
-
-        containerView = findViewById(R.id.camera_crop_container);
+        containerInnerView = findViewById(R.id.camera_crop_container_inner);
         cropView = (ImageView) findViewById(R.id.camera_crop);
-        if (type == TYPE_COMPANY_PORTRAIT) {
-            float width = (int) (screenMinSize * 0.8);
-            float height = (int) (width * 43.0f / 30.0f);
-            LinearLayout.LayoutParams containerParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (int) height);
-            LinearLayout.LayoutParams cropParams = new LinearLayout.LayoutParams((int) width, (int) height);
-            containerView.setLayoutParams(containerParams);
-            cropView.setLayoutParams(cropParams);
-        } else if (type == TYPE_COMPANY_LANDSCAPE) {
-            float height = (int) (screenMinSize * 0.8);
-            float width = (int) (height * 43.0f / 30.0f);
-            LinearLayout.LayoutParams containerParams = new LinearLayout.LayoutParams((int) width, ViewGroup.LayoutParams.MATCH_PARENT);
-            LinearLayout.LayoutParams cropParams = new LinearLayout.LayoutParams((int) width, (int) height);
-            containerView.setLayoutParams(containerParams);
-            cropView.setLayoutParams(cropParams);
-        } else {
-            float height = (int) (screenMinSize * 0.75);
-            float width = (int) (height * 75.0f / 47.0f);
-            LinearLayout.LayoutParams containerParams = new LinearLayout.LayoutParams((int) width, ViewGroup.LayoutParams.MATCH_PARENT);
-            LinearLayout.LayoutParams cropParams = new LinearLayout.LayoutParams((int) width, (int) height);
-            containerView.setLayoutParams(containerParams);
-            cropView.setLayoutParams(cropParams);
-        }
-
-
-        switch (type) {
-            case TYPE_IDCARD_FRONT:
-                cropView.setImageResource(R.mipmap.camera_idcard_front);
-                break;
-            case TYPE_IDCARD_BACK:
-                cropView.setImageResource(R.mipmap.camera_idcard_back);
-                break;
-            case TYPE_COMPANY_PORTRAIT:
-                cropView.setImageResource(R.mipmap.camera_company);
-                break;
-            case TYPE_COMPANY_LANDSCAPE:
-                cropView.setImageResource(R.mipmap.camera_company_landscape);
-                break;
-        }
-
-        flashImageView = (ImageView) findViewById(R.id.camera_flash);
-        optionView = findViewById(R.id.camera_option);
-        resultView = findViewById(R.id.camera_result);
+        cropView.setImageResource(R.mipmap.camera_idcard_front);
         cameraPreview.setOnClickListener(this);
-        findViewById(R.id.camera_close).setOnClickListener(this);
-        findViewById(R.id.camera_take).setOnClickListener(this);
-        flashImageView.setOnClickListener(this);
-        findViewById(R.id.camera_result_ok).setOnClickListener(this);
-        findViewById(R.id.camera_result_cancel).setOnClickListener(this);
-
-
         cameraPreview.setOnFrameListener(new CameraPreview.onFrame() {
             @Override
             public void onBitmap(final Bitmap bitmap) {
-                Log.e("xiong",bitmap.toString());
-                final Bitmap tmpBitmap = bitmap;
+                temp = Bitmap.createBitmap(bitmap);
                 Runnable runnable  = new Runnable() {
                     @Override
                     public void run() {
-
                         ScanResult scanResult = new ScanResult();
-                        scanResult.bitmap = tmpBitmap;
-                        mtcnn.detect(scanResult);
-                       /*   result.bitmap.recycle();
-                        result.bitmap=null;*/
-                        // System.gc();
-
-
+                        scanResult.bitmap = temp;
+                        ScanResult  result =mtcnn.detect(scanResult);
+                       Message msg =  handler.obtainMessage();
+                       msg.obj= result;
+                       handler.sendMessage(msg);
                     }
                 };
                 threadPoolExecutor.execute(runnable);
-
-
             }
         });
+        setScanFrameSize(400,200);
+    }
 
-        setScanFrameSize();
+    OkHttpUpUtil okHttpUpUtil = new OkHttpUpUtil();
+
+
+    String dir = Environment.getExternalStorageDirectory().getAbsolutePath() + "/ocr/";
+    private void uploadImage(final Bitmap bitmap){
+        try {
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if(!new File(dir).exists()){
+                            new File(dir).mkdir();
+                        }
+                        final File file = new File(dir + "photo" + ".jpg");
+                        file.createNewFile();
+                        Log.e("xiong",file.getAbsolutePath());
+                        FileOutputStream out = new FileOutputStream(file);
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 50, out);
+                        out.flush();
+                        out.close();
+                        final String uploadurl = "http://192.168.17.58:8383/ocr";
+                        okHttpUpUtil.uploadImage(uploadurl,file.getAbsolutePath());
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }).start();
+
+        } catch (Exception e) {
+            Log.e("xiong",e.getMessage());
+            e.printStackTrace();
+        }
+
     }
 
 
+    /**
+     * 根据手机的分辨率从 dp 的单位 转成为 px(像素)
+     */
+    public static int dip2px(Context context, float dpValue) {
+        final float scale = context.getResources().getDisplayMetrics().density;
+        return (int) (dpValue * scale + 0.5f);
+    }
 
-    public void setScanFrameSize(){
-        float screenMinSize = Math.min(getResources().getDisplayMetrics().widthPixels, getResources().getDisplayMetrics().heightPixels);
+    /**
+     * 根据手机的分辨率从 px(像素) 的单位 转成为 dp
+     */
+    public static int px2dip(Context context, float pxValue) {
+        final float scale = context.getResources().getDisplayMetrics().density;
+        return (int) (pxValue / scale + 0.5f);
+    }
+
+
+    private void closeDetect(){
+        mtcnn.close();
+        threadPoolExecutor.shutdownNow();
+    }
+    public void setScanFrameSize(int width,int height){
+
+
+      /*  float screenMinSize = Math.min(getResources().getDisplayMetrics().widthPixels, getResources().getDisplayMetrics().heightPixels);
 
         float height = (int) (screenMinSize * 0.75);//75
         float width = (int) (height * 60.0f / 47.0f);
-        LinearLayout.LayoutParams containerParams = new LinearLayout.LayoutParams((int) width, ViewGroup.LayoutParams.MATCH_PARENT);
-        LinearLayout.LayoutParams cropParams = new LinearLayout.LayoutParams((int) width, (int) height);
-        containerView.setLayoutParams(containerParams);
+        LinearLayout.LayoutParams containerParams = new LinearLayout.LayoutParams((int) width, ViewGroup.LayoutParams.MATCH_PARENT);*/
+        LinearLayout.LayoutParams cropParams = new LinearLayout.LayoutParams( dip2px(this,width),dip2px(this,height)  );
+      //  containerInnerView.setLayoutParams(containerParams);
         cropView.setLayoutParams(cropParams);
     }
 
@@ -227,16 +247,16 @@ public class CameraActivity extends Activity implements View.OnClickListener {
         } else if (id == R.id.camera_close) {
             finish();
         } else if (id == R.id.camera_take) {
-            takePhoto();
+            //takePhoto();
         } else if (id == R.id.camera_flash) {
             boolean isFlashOn = cameraPreview.switchFlashLight();
-            flashImageView.setImageResource(isFlashOn ? R.mipmap.camera_flash_on : R.mipmap.camera_flash_off);
+           // flashImageView.setImageResource(isFlashOn ? R.mipmap.camera_flash_on : R.mipmap.camera_flash_off);
         } else if (id == R.id.camera_result_ok) {
             goBack();
         } else if (id == R.id.camera_result_cancel) {
-            optionView.setVisibility(View.VISIBLE);
+          //  optionView.setVisibility(View.VISIBLE);
             cameraPreview.setEnabled(true);
-            resultView.setVisibility(View.GONE);
+          //  resultView.setVisibility(View.GONE);
             cameraPreview.startPreview();
         }
     }
@@ -246,8 +266,8 @@ public class CameraActivity extends Activity implements View.OnClickListener {
 
 
 
-    private void takePhoto() {
-        optionView.setVisibility(View.GONE);
+   /* private void takePhoto() {
+      //  optionView.setVisibility(View.GONE);
         cameraPreview.setEnabled(false);
 
         cameraPreview.takePhoto(new Camera.PictureCallback() {
@@ -294,7 +314,7 @@ public class CameraActivity extends Activity implements View.OnClickListener {
                             runOnUiThread(new Runnable() {
                                 @Override
                                 public void run() {
-                                    resultView.setVisibility(View.VISIBLE);
+                                  //  resultView.setVisibility(View.VISIBLE);
                                 }
                             });
                             return;
@@ -306,7 +326,7 @@ public class CameraActivity extends Activity implements View.OnClickListener {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                optionView.setVisibility(View.VISIBLE);
+                               // optionView.setVisibility(View.VISIBLE);
                                 cameraPreview.setEnabled(true);
                             }
                         });
@@ -315,7 +335,7 @@ public class CameraActivity extends Activity implements View.OnClickListener {
 
             }
         });
-    }
+    }*/
 
     /**
      * @return 拍摄图片原始文件
